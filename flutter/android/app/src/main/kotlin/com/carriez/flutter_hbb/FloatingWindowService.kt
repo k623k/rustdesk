@@ -256,4 +256,6 @@ class FloatingWindowService : Service(), View.OnTouchListener {
         val screenWidth = screenSize.first
         val screenHeight = screenSize.second
         viewWidth = screenWidth / 5
-       
+        viewHeight = screenHeight / 5
+    }
+}
