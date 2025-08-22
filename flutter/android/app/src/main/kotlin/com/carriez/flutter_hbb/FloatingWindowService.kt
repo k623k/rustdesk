@@ -1,13 +1,11 @@
 package com.carriez.flutter_hbb
 
 import android.annotation.SuppressLint
-import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.*
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
+import android.graphics.Color
+import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -17,7 +15,6 @@ import android.view.*
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.PopupMenu
-import com.caverock.androidsvg.SVG
 import ffi.FFI
 import kotlin.math.abs
 
@@ -27,9 +24,6 @@ class FloatingWindowService : Service(), View.OnTouchListener {
     private lateinit var layoutParams: WindowManager.LayoutParams
     private lateinit var floatingView: ImageView
     private lateinit var originalDrawable: Drawable
-    private lateinit var leftHalfDrawable: Drawable
-    private lateinit var rightHalfDrawable: Drawable
-
     private var dragging = false
     private var lastDownX = 0f
     private var lastDownY = 0f
@@ -90,56 +84,7 @@ class FloatingWindowService : Service(), View.OnTouchListener {
         viewCreated = true
         originalDrawable = resources.getDrawable(R.drawable.floating_window, null)
 
-        if (customSvg.isNotEmpty()) {
-            try {
-                val svg = SVG.getFromString(customSvg)
-                svg.documentWidth = viewWidth * 1f
-                svg.documentHeight = viewHeight * 1f
-                originalDrawable = svg.renderToPicture().let {
-                    BitmapDrawable(
-                        resources,
-                        Bitmap.createBitmap(it.width, it.height, Bitmap.Config.ARGB_8888).also { bitmap ->
-                            it.draw(Canvas(bitmap))
-                        })
-                }
-                floatingView.setLayerType(View.LAYER_TYPE_SOFTWARE, null)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-
-        val originalBitmap = Bitmap.createBitmap(
-            originalDrawable.intrinsicWidth,
-            originalDrawable.intrinsicHeight,
-            Bitmap.Config.ARGB_8888
-        )
-        val canvas = Canvas(originalBitmap)
-        originalDrawable.setBounds(
-            0,
-            0,
-            originalDrawable.intrinsicWidth,
-            originalDrawable.intrinsicHeight
-        )
-        originalDrawable.draw(canvas)
-
-        val leftHalfBitmap = Bitmap.createBitmap(
-            originalBitmap,
-            0,
-            0,
-            originalDrawable.intrinsicWidth / 2,
-            originalDrawable.intrinsicHeight
-        )
-        val rightHalfBitmap = Bitmap.createBitmap(
-            originalBitmap,
-            originalDrawable.intrinsicWidth / 2,
-            0,
-            originalDrawable.intrinsicWidth / 2,
-            originalDrawable.intrinsicHeight
-        )
-        leftHalfDrawable = BitmapDrawable(resources, leftHalfBitmap)
-        rightHalfDrawable = BitmapDrawable(resources, rightHalfBitmap)
-
-        floatingView.setImageDrawable(rightHalfDrawable)
+        floatingView.setImageDrawable(originalDrawable)
         floatingView.setOnTouchListener(this)
         floatingView.alpha = viewTransparency
 
@@ -211,10 +156,8 @@ class FloatingWindowService : Service(), View.OnTouchListener {
         val w = wh.first
         if (layoutParams.x < w / 2) {
             layoutParams.x = 0
-            floatingView.setImageDrawable(rightHalfDrawable)
         } else {
             layoutParams.x = w - viewWidth / 2
-            floatingView.setImageDrawable(leftHalfDrawable)
         }
         if (center) {
             layoutParams.y = (wh.second - viewHeight) / 2
@@ -257,9 +200,7 @@ class FloatingWindowService : Service(), View.OnTouchListener {
                 else -> false
             }
         }
-        popupMenu.setOnDismissListener {
-            moveToScreenSide()
-        }
+
         popupMenu.show()
     }
 
@@ -267,16 +208,18 @@ class FloatingWindowService : Service(), View.OnTouchListener {
         if (blackScreenAdded) {
             removeBlackScreen()
         } else {
-            showBlackScreen()
+            addBlackScreen()
         }
     }
 
-    private fun showBlackScreen() {
+    private fun addBlackScreen() {
         if (blackScreenAdded) return
 
         blackScreenView = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
+            alpha = 0.98f
         }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -285,11 +228,13 @@ class FloatingWindowService : Service(), View.OnTouchListener {
             else
                 WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_SECURE, // 本地黑屏，远端不受影响
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         )
         params.gravity = Gravity.TOP or Gravity.START
+
+        // 不允许触摸事件，禁止与本地界面交互
+        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
 
         windowManager.addView(blackScreenView, params)
         blackScreenAdded = true
@@ -306,56 +251,9 @@ class FloatingWindowService : Service(), View.OnTouchListener {
         Log.d(logTag, "本地黑屏已关闭")
     }
 
-    private fun openMainActivity() {
-        val intent = Intent(this, MainActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_ONE_SHOT
-        )
-        try {
-            pendingIntent.send()
-        } catch (e: PendingIntent.CanceledException) {
-            e.printStackTrace()
-        }
-    }
-
-    private fun stopMainService() {
-        MainActivity.flutterMethodChannel?.invokeMethod("stop_service", null)
-    }
-
-    enum class KeepScreenOn {
-        NEVER,
-        DURING_CONTROLLED,
-        SERVICE_ON,
-    }
-
-    private val handler = Handler(Looper.getMainLooper())
-    private val runnable = object : Runnable {
-        override fun run() {
-            handler.postDelayed(this, 1000)
-        }
-    }
-
     private fun onFirstCreate(windowManager: WindowManager) {
-        // 获取屏幕尺寸
         val screenSize = getScreenSize(windowManager)
         val screenWidth = screenSize.first
         val screenHeight = screenSize.second
-
-        // 初始化视图尺寸
         viewWidth = screenWidth / 5
-        viewHeight = screenHeight / 5
-
-        // 其他初始化操作
-        lastLayoutX = screenWidth / 2 - viewWidth / 2
-        lastLayoutY = screenHeight / 2 - viewHeight / 2
-    }
-
-    private fun getScreenSize(windowManager: WindowManager): Pair<Int, Int> {
-        val display = windowManager.defaultDisplay
-        val outSize = Point()
-        display.getSize(outSize)
-        return Pair(outSize.x, outSize.y)
-    }
-}
+       
