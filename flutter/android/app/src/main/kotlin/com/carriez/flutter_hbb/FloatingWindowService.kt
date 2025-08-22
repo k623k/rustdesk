@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -15,8 +16,6 @@ import android.view.*
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.PopupMenu
-import ffi.FFI
-import kotlin.math.abs
 
 class FloatingWindowService : Service(), View.OnTouchListener {
 
@@ -214,48 +213,18 @@ class FloatingWindowService : Service(), View.OnTouchListener {
 
     private fun addBlackScreen() {
         if (blackScreenAdded) return
-
-        blackScreenView = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-            alpha = 0.98f
-        }
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        )
-        params.gravity = Gravity.TOP or Gravity.START
-
-        // 不允许触摸事件，禁止与本地界面交互
-        params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-
-        windowManager.addView(blackScreenView, params)
         blackScreenAdded = true
-        Log.d(logTag, "本地黑屏已开启")
+
+        blackScreenView = FrameLayout(this)
+        blackScreenView!!.setBackgroundColor(Color.BLACK)
+
+        windowManager.addView(blackScreenView, layoutParams)
     }
 
     private fun removeBlackScreen() {
-        if (!blackScreenAdded) return
-        blackScreenView?.let {
-            windowManager.removeView(it)
+        if (blackScreenView != null) {
+            windowManager.removeView(blackScreenView)
+            blackScreenAdded = false
         }
-        blackScreenView = null
-        blackScreenAdded = false
-        Log.d(logTag, "本地黑屏已关闭")
-    }
-
-    private fun onFirstCreate(windowManager: WindowManager) {
-        val screenSize = getScreenSize(windowManager)
-        val screenWidth = screenSize.first
-        val screenHeight = screenSize.second
-        viewWidth = screenWidth / 5
-        viewHeight = screenHeight / 5
     }
 }
