@@ -336,4 +336,26 @@ class FloatingWindowService : Service(), View.OnTouchListener {
             handler.postDelayed(this, 1000)
         }
     }
+
+    private fun onFirstCreate(windowManager: WindowManager) {
+        // 获取屏幕尺寸
+        val screenSize = getScreenSize(windowManager)
+        val screenWidth = screenSize.first
+        val screenHeight = screenSize.second
+
+        // 初始化视图尺寸
+        viewWidth = screenWidth / 5
+        viewHeight = screenHeight / 5
+
+        // 其他初始化操作
+        lastLayoutX = screenWidth / 2 - viewWidth / 2
+        lastLayoutY = screenHeight / 2 - viewHeight / 2
+    }
+
+    private fun getScreenSize(windowManager: WindowManager): Pair<Int, Int> {
+        val display = windowManager.defaultDisplay
+        val outSize = Point()
+        display.getSize(outSize)
+        return Pair(outSize.x, outSize.y)
+    }
 }
